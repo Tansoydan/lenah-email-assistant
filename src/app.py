@@ -7,140 +7,136 @@ from src.config import CREDENTIALS_PATH, GMAIL_SCOPES, TOKEN_PATH
 from src.gmail_client import GmailClient
 from src.llm import generate_structured
 
-CENTRAL_EMAIL = "lenah.test.enquiries@gmail.com"
-
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 
-def extract_first_email(text: str) -> str | None:
+def first_email(text: str) -> str | None:
     m = EMAIL_RE.search(text or "")
     return m.group(0) if m else None
 
 
-def extract_emails(text: str) -> list[str]:
-    return [e.strip() for e in EMAIL_RE.findall(text or "")]
+def init_state() -> None:
+    st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("user_email", None)
+    st.session_state.setdefault("recipient_email", None)
+    st.session_state.setdefault("pending", None)  # {"to","subject","body"}
+    st.session_state.setdefault("step", "need_user_email")  # need_user_email|need_recipient|need_details|confirm
 
-def capture_user_email(user_message: str) -> str | None:
 
-    if "user_email" not in st.session_state:
-        st.session_state.user_email = None
+def say(role: str, content: str) -> None:
+    st.session_state.messages.append({"role": role, "content": content})
+    with st.chat_message(role):
+        st.markdown(content)
 
-    email = extract_first_email(user_message)
-    if email:
-        st.session_state.user_email = email
-        return email
 
-    return None
+def render_history() -> None:
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+
+def preview(draft: dict[str, str], cc_email: str) -> str:
+    return (
+        "Here’s the draft:\n\n"
+        f"**To:** {draft['to']}\n\n"
+        f"**CC:** {cc_email}\n\n"
+        f"**Subject:** {draft['subject']}\n\n"
+        "**Body:**\n\n"
+        f"{draft['body']}\n\n"
+        "Type **send** to send it, or paste edits to change it."
+    )
 
 
 def get_gmail_client() -> GmailClient:
-    if "gmail_client" not in st.session_state:
-        st.session_state.gmail_client = GmailClient(
-            credentials_path=CREDENTIALS_PATH,
-            token_path=TOKEN_PATH,
-            scopes=GMAIL_SCOPES,
-        )
-    return st.session_state.gmail_client
+    return GmailClient(
+        credentials_path=CREDENTIALS_PATH,
+        token_path=TOKEN_PATH,
+        scopes=GMAIL_SCOPES,
+    )
 
 
 def run_app() -> None:
     st.set_page_config(page_title="LENAH - Property Email Assistant", layout="centered")
     st.title("LENAH - Property Email Assistant")
 
-    gmail_client = get_gmail_client()
-    gmail_client.service()
+    init_state()
+    gmail = get_gmail_client()
+    gmail.service()
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
+    # Intro (append only — don't render twice)
     if not st.session_state.messages:
-        intro = (
-            "Hi, I’m LENAH 👋\n\n"
-            "I can draft and send property enquiry emails from my own mailbox, and I’ll CC you in.\n\n"
-            "What’s your email address?"
-        )
-        st.session_state.messages.append({"role": "assistant", "content": intro})
-    
-    if "seen_emails" not in st.session_state:
-        st.session_state.seen_emails = set()
-
-    if "user_email" not in st.session_state:
-        st.session_state.user_email = None
-
-
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    user_input = st.chat_input("Message LENAH…")
-    if not user_input:
-        return
-
-
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-
-    if not st.session_state.user_email:
-        email = extract_first_email(user_input)
-        if not email:
-            assistant_text = "Before we start — what’s your email address so I can CC you in on every enquiry?"
-            st.session_state.messages.append({"role": "assistant", "content": assistant_text})
-            with st.chat_message("assistant"):
-                st.markdown(assistant_text)
-            return
-
-        st.session_state.user_email = email
-        assistant_text = f"Nice one — I’ll CC you in at {email}. Now, what’s the estate agent’s email address?"
-        st.session_state.messages.append({"role": "assistant", "content": assistant_text})
-        with st.chat_message("assistant"):
-            st.markdown(assistant_text)
-        return
-
-    for e in extract_emails(user_input):
-        st.session_state.seen_emails.add(e)
-
-    context_messages = st.session_state.messages[-12:]
-    result = generate_structured(context_messages)
-
-  
-    if result.get("action") == "send_email":
-        to_email = (result.get("to") or "").strip()
-        if not to_email or to_email not in st.session_state.seen_emails:
-            result = {
-                "assistant_text": "What’s the estate agent’s email address? Please paste it explicitly and I’ll send the message.",
-                "action": "none",
-                "to": "",
-                "cc": [],
-                "subject": "",
-                "body": "",
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "Hi, I’m LENAH 👋\n\n"
+                    "I draft property enquiry emails from my own mailbox and CC you in.\n\n"
+                    "**What’s your email address?**"
+                ),
             }
+        )
 
+    render_history()
 
-    if result.get("action") == "send_email":
-        to_email = result["to"].strip()
-        subject = (result.get("subject") or "").strip() or "Property enquiry"
-        body = (result.get("body") or "").strip()
+    text = st.chat_input("Message LENAH…")
+    if not text:
+        return
 
-        try:
-            gmail_client.send_email(
-                to=to_email,
-                subject=subject,
-                body=body,
-                cc=[st.session_state.user_email], 
-            )
-            assistant_text = f"Done — I’ve sent that and CC’d you in at {st.session_state.user_email}."
-        except Exception as e:
-            assistant_text = f"I couldn’t send the email. Details: {e}"
-    else:
-        assistant_text = (result.get("assistant_text") or "").strip() or "…"
+    say("user", text)
+    t = text.strip()
 
-    st.session_state.messages.append({"role": "assistant", "content": assistant_text})
-    with st.chat_message("assistant"):
-        st.markdown(assistant_text)
+    if st.session_state.step == "confirm" and t.lower() == "send":
+        d = st.session_state.pending
+        gmail.send_email(
+            to=d["to"],
+            subject=d["subject"],
+            body=d["body"],
+            cc=[st.session_state.user_email],
+        )
+        st.session_state.pending = None
+        st.session_state.step = "need_details"
+        say("assistant", f"Sent — CC’d you in at {st.session_state.user_email}.")
+        return
+
+    if st.session_state.step == "need_user_email":
+        email = first_email(t)
+        if not email:
+            say("assistant", "Please paste your email address (I’ll CC you on every enquiry).")
+            return
+        st.session_state.user_email = email
+        st.session_state.step = "need_recipient"
+        say("assistant", f"Nice one — I’ll CC you in at {email}. Now paste the estate agent’s email address.")
+        return
+
+    if st.session_state.step == "need_recipient":
+        email = first_email(t)
+        if not email:
+            say("assistant", "Please paste the estate agent’s email address.")
+            return
+        st.session_state.recipient_email = email
+        st.session_state.step = "need_details"
+        say("assistant", "Got it. Now tell me what you’re looking for (or paste a Rightmove link).")
+        return
+
+    context = (
+        st.session_state.messages
+        + [{"role": "system", "content": f"Recipient email: {st.session_state.recipient_email}"}]
+    )[-12:]
+
+    result = generate_structured(context)
+
+    subject = (result.get("subject") or "").strip()
+    body = (result.get("body") or "").strip()
+    to_email = (result.get("to") or "").strip() or st.session_state.recipient_email
+
+    if not subject or not body:
+        say("assistant", (result.get("assistant_text") or "Tell me a bit more and I’ll draft the email.").strip())
+        return
+
+    st.session_state.pending = {"to": to_email, "subject": subject, "body": body}
+    st.session_state.step = "confirm"
+    say("assistant", preview(st.session_state.pending, st.session_state.user_email))
 
 
 if __name__ == "__main__":
     run_app()
-
