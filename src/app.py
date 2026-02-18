@@ -69,7 +69,7 @@ if create:
 
         draft_id = client.create_draft(draft.to_email, draft.subject, draft.body)
 
-        st.success(f"Draft created ✅ (Draft ID: {draft_id})")
+        st.success(f"Draft created (Draft ID: {draft_id})")
         st.subheader("Preview")
         st.markdown(f"**To:** {draft.to_email}")
         st.markdown(f"**Subject:** {draft.subject}")
