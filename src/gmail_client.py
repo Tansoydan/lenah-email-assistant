@@ -60,3 +60,7 @@ class GmailClient:
         draft = service.users().drafts().create(userId="me", body=draft_body).execute()
 
         return draft["id"]
+
+def get_profile_email(self) -> str:
+    profile = self.service.users().getProfile(userId="me").execute()
+    return profile.get("emailAddress", "")
