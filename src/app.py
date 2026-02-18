@@ -115,7 +115,7 @@ def run_app() -> None:
             return
         st.session_state.recipient_email = email
         st.session_state.step = "need_details"
-        say("assistant", "Got it. Now tell me what you’re looking for (or paste a Rightmove link).")
+        say("assistant", "Got it. Now tell me what you’re looking for (or paste a property link).")
         return
 
     context = (
