@@ -12,8 +12,7 @@ class EmailDraft:
 
 
 def build_subject(message: str) -> str:
-    # Tiny heuristic: keep it short and neutral.
-    # If you paste a Rightmove link, this still works fine.
+
     today = date.today().strftime("%d %b %Y")
     return f"Enquiry ({today})"
 
