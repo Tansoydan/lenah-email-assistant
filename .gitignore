@@ -1,8 +1,15 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
-.env
-token.json
+
+# Secrets / OAuth
 credentials.json
-data/*.db
+token.json
+.env
+
+# macOS
 .DS_Store
+
+# Streamlit
+.streamlit/
