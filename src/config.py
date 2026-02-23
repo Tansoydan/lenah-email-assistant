@@ -16,3 +16,7 @@ GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
 APP_TITLE = "LENAH — Property Email Assitant"
 DEFAULT_FROM_NAME = "LENAH"
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
