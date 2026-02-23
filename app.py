@@ -7,6 +7,7 @@ from src.gmail_client import GmailClient
 from src.llm import decide_next_action, chat_reply, draft_agent_email, draft_summary_email
 from src.utils import extract_first_email, is_valid_email, normalise_email
 
+
 def get_gmail_client() -> GmailClient:
     return GmailClient(
         credentials_path=str(CREDENTIALS_PATH),
@@ -21,14 +22,17 @@ def send_email(*, to: str, subject: str, body: str, cc: list[str] | None = None)
 
 
 def init_state() -> None:
-    st.session_state.setdefault("messages", []) 
-    st.session_state.setdefault("user_email", None) 
-
+    st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("user_email", None)
 
     st.session_state.setdefault("pending_email", None)
 
     st.session_state.setdefault("pending_user_text", None)
     st.session_state.setdefault("awaiting_reply", False)
+
+
+    st.session_state.setdefault("last_email_intent", None)          
+    st.session_state.setdefault("pending_agent_request", None)     
 
 
 def add_message(role: str, content: str) -> None:
@@ -40,12 +44,8 @@ def render_chat() -> None:
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
 
+
 def extract_email_if_explicit_user_email(text: str) -> str | None:
-    """
-    Only treat an email inside 'text' as the USER'S email if the user is explicitly
-    telling us their email, e.g. 'my email is ...', 'cc me at ...', etc.
-    This prevents overwriting user_email when the user provides an AGENT email.
-    """
     t = (text or "").lower()
     cues = [
         "my email is",
@@ -76,11 +76,8 @@ def ask_for_agent_email() -> None:
     add_message("assistant", "Sure — what’s the estate agent’s email address?")
     st.rerun()
 
+
 def handle_pending_email(user_text: str) -> None:
-    """
-    If we are collecting emails, fill missing fields.
-    If everything is present, send via GmailClient and confirm with message id.
-    """
     pending = st.session_state.pending_email
     if not pending:
         return
@@ -128,6 +125,7 @@ def handle_pending_email(user_text: str) -> None:
             msg_id = send_email(to=user_email, subject=subject, body=body, cc=None)
             add_message("assistant", f"Sent. Gmail message id: `{msg_id}`")
             st.session_state.pending_email = None
+            st.session_state.last_email_intent = "SUMMARY"
             st.rerun()
 
         if pending.get("action") == "AGENT":
@@ -144,7 +142,10 @@ def handle_pending_email(user_text: str) -> None:
                 ask_for_user_email("And what email should I CC you on?")
                 return
 
-            subject, body = draft_agent_email(chat_history=st.session_state.messages, user_request=user_request)
+            subject, body = draft_agent_email(
+                chat_history=st.session_state.messages,
+                user_request=user_request,
+            )
             msg_id = send_email(to=agent_email, subject=subject, body=body, cc=[user_email])
 
             add_message(
@@ -152,6 +153,8 @@ def handle_pending_email(user_text: str) -> None:
                 f"Sent. Gmail message id: `{msg_id}`\n\nTo: `{agent_email}`\nCC: `{user_email}`",
             )
             st.session_state.pending_email = None
+            st.session_state.last_email_intent = "AGENT"
+            st.session_state.pending_agent_request = None
             st.rerun()
 
         st.session_state.pending_email = None
@@ -171,12 +174,15 @@ def process_text(text: str) -> None:
     if explicit_user_email:
         st.session_state.user_email = explicit_user_email
 
-    decision = decide_next_action(user_text=text)
+
+    decision = decide_next_action(user_text=text, chat_history=st.session_state.messages)
 
     if decision == "EMAIL_SUMMARY_TO_USER":
+        st.session_state.last_email_intent = "SUMMARY"
+
         if st.session_state.user_email:
             st.session_state.pending_email = {"action": "SUMMARY"}
-            handle_pending_email("") 
+            handle_pending_email("")
             return
 
         st.session_state.pending_email = {"action": "SUMMARY", "missing": "user_email"}
@@ -184,12 +190,16 @@ def process_text(text: str) -> None:
         return
 
     if decision == "EMAIL_AGENT":
+
+        st.session_state.last_email_intent = "AGENT"
+        st.session_state.pending_agent_request = st.session_state.pending_agent_request or text
+
         agent_email = None
         found = extract_first_email(text)
         if found and is_valid_email(found):
             agent_email = normalise_email(found)
 
-        pending = {"action": "AGENT", "user_request": text}
+        pending = {"action": "AGENT", "user_request": st.session_state.pending_agent_request}
 
         if agent_email:
             pending["agent_email"] = agent_email
@@ -210,6 +220,7 @@ def process_text(text: str) -> None:
         handle_pending_email("")
         return
 
+    # CHAT
     reply = chat_reply(
         chat_history=st.session_state.messages,
         user_text=text,
@@ -225,7 +236,6 @@ def main() -> None:
 
     init_state()
     render_chat()
-
 
     user_text = st.chat_input("Message LENAH…")
     if user_text:

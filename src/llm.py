@@ -10,7 +10,6 @@ from src.templates import ensure_signature
 
 Decision = Literal["CHAT", "EMAIL_SUMMARY_TO_USER", "EMAIL_AGENT"]
 
-
 if not OPENAI_API_KEY:
     raise RuntimeError(
         "OPENAI_API_KEY is missing. Set it in your .env (and ensure load_dotenv() runs) or environment."
@@ -18,52 +17,80 @@ if not OPENAI_API_KEY:
 
 _client = OpenAI(api_key=OPENAI_API_KEY)
 
-def decide_next_action(*, user_text: str) -> Decision:
+
+_SEND_WORDS = [
+    "email",
+    "e-mail",
+    "send",
+    "inbox",
+    "cc",
+    "forward",
+    "go ahead",
+    "do it",
+    "please send",
+    "send it",
+    "send this",
+]
+
+_AGENT_WORDS = [
+    "estate agent",
+    "letting agent",
+    "landlord",
+    "broker",
+    "realtor",
+    "agent",
+]
+
+_CONTACT_INTENT_WORDS = [
+    "ask",
+    "enquire",
+    "inquire",
+    "contact",
+    "reach out",
+    "message",
+]
+
+
+def decide_next_action(*, user_text: str, chat_history: list[dict]) -> Decision:
     """
-    Routing rules for your intended workflow:
+    Intent-aware router.
 
-    - Default behaviour: CHAT (normal property assistant conversation).
-    - Only email when the user is explicitly asking to send/email something.
-      - If user asks to email/send to themselves -> EMAIL_SUMMARY_TO_USER (we send key points of convo)
-      - If user asks to email/contact an estate agent / landlord / third party -> EMAIL_AGENT
-
-    This is intentionally simple and robust.
+    Key behaviour:
+    - If the user says "send it" after discussing an estate agent recently,
+      route to EMAIL_AGENT (ask for agent email, CC user).
+    - If the user wants to contact an agent even without saying "send",
+      route to EMAIL_AGENT (so the app can collect the agent email).
+    - If the user wants to send something but it's not agent-related,
+      route to EMAIL_SUMMARY_TO_USER.
+    - Otherwise CHAT.
     """
     t = (user_text or "").strip().lower()
     if not t:
         return "CHAT"
 
-    send_words = [
-        "email",
-        "e-mail",
-        "send",
-        "inbox",
-        "cc",
-        "forward",
-    ]
+    wants_send = any(w in t for w in _SEND_WORDS)
+    mentions_agent = any(w in t for w in _AGENT_WORDS)
+    wants_contact = any(w in t for w in _CONTACT_INTENT_WORDS)
+
+    recent = chat_history[-10:] if chat_history else []
+    recent_text = " ".join((m.get("content", "") or "").lower() for m in recent)
+    history_mentions_agent = any(w in recent_text for w in _AGENT_WORDS)
 
 
-    agent_words = [
-        "estate agent",
-        "letting agent",
-        "agent",
-        "landlord",
-        "broker",
-        "realtor",
-    ]
-
-    wants_send = any(w in t for w in send_words)
-    wants_agent = any(w in t for w in agent_words)
-
-
-    if wants_send and wants_agent:
+    if (mentions_agent or history_mentions_agent) and (wants_send or wants_contact):
         return "EMAIL_AGENT"
 
 
     if wants_send:
         return "EMAIL_SUMMARY_TO_USER"
 
+
+    if mentions_agent and wants_contact:
+        return "EMAIL_AGENT"
+
     return "CHAT"
+
+
 
 
 ASSISTANT_SYSTEM = """You are LENAH, a helpful property assistant.
@@ -91,7 +118,6 @@ def chat_reply(*, chat_history: list[dict], user_text: str, user_email: str | No
         temperature=0.5,
     )
     return (resp.output_text or "").strip()
-
 
 
 EMAIL_SYSTEM = """You are LENAH – AI Assistant. Write a professional email.
