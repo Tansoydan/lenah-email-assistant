@@ -1,0 +1,32 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi "
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I assist you with your property search today?"
+    },
+    {
+      "role": "user",
+      "content": "best areas in manchester"
+    },
+    {
+      "role": "assistant",
+      "content": "Manchester is a vibrant city with a variety of neighborhoods to suit different preferences and lifestyles. Here are some of the best areas to consider:\n\n1. **Didsbury**: Known for its leafy streets, independent shops, and cafes. It's popular with families and young professionals.\n\n2. **Chorlton**: Offers a bohemian vibe with plenty of green spaces, bars, and restaurants. It's great for those looking for a lively community.\n\n3. **Northern Quarter**: Located in the city center, it's famous for its artsy atmosphere, trendy bars, and music venues. Ideal for those who enjoy city life.\n\n4. **Ancoats**: Recently regenerated, it's now a trendy area with a mix of modern apartments, eateries, and cultural spots.\n\n5. **Sale**: A bit further out, Sale offers a suburban feel with good schools and parks, making it perfect for families.\n\n6. **Castlefield**: Known for its canals and historical sites, it offers a relaxed city living environment with modern apartments.\n\n7. **Salford Quays**: Home to MediaCityUK, it's a modern area with waterfront apartments and cultural attractions like The Lowry.\n\nEach area has its own unique charm, so your choice might depend on factors like proximity to work, schools, or lifestyle preferences. If you have any specific requirements or need further details, feel free to ask!"
+    },
+    {
+      "role": "user",
+      "content": "email me this list "
+    },
+    {
+      "role": "assistant",
+      "content": "Done — summary sent to **ap21121@qmul.ac.uk**."
+    }
+  ],
+  "user_email": "ap21121@qmul.ac.uk",
+  "pending_email": null,
+  "agent_threads": {},
+  "agent_last_message_id": {}
+}

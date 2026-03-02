@@ -14,6 +14,7 @@ from src.llm import (
     refine_draft,
     summarise_agent_reply,
 )
+from src.session import UserStore
 from src.utils import extract_first_email, is_valid_email, normalise_email
 
 
@@ -57,6 +58,66 @@ def _init_state() -> None:
     st.session_state.setdefault("agent_threads", {})
     # agent_email -> last Gmail message_id we sent (reply-detection cursor)
     st.session_state.setdefault("agent_last_message_id", {})
+
+
+def _login_screen() -> bool:
+    """Render the login gate. Returns True when the user is identified."""
+    if st.session_state.get("_user_store") is not None:
+        return True
+
+    st.subheader("Who are you?")
+    st.caption("Enter your email address to load your saved conversations.")
+
+    email_input = st.text_input(
+        "Your email address",
+        key="_login_email_input",
+        placeholder="you@example.com",
+    )
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        login_clicked = st.button("Continue", use_container_width=True, type="primary")
+    with col2:
+        clear_clicked = False
+        if email_input and is_valid_email(normalise_email(email_input)):
+            store_preview = UserStore(email_input)
+            if store_preview.exists:
+                clear_clicked = st.button("Clear saved data", use_container_width=True)
+
+    if login_clicked:
+        if not email_input or not is_valid_email(normalise_email(email_input)):
+            st.error("Please enter a valid email address.")
+            return False
+        store = UserStore(email_input)
+        _clear_user_state()            # wipe any stale data before loading
+        st.session_state.update(store.load())
+        st.session_state.user_email = store.email
+        st.session_state["_user_store"] = store
+        st.rerun()
+
+    if clear_clicked:
+        UserStore(email_input).delete()
+        st.success("Saved data cleared. Reload the page to start fresh.")
+        return False
+
+    return False
+
+
+def _clear_user_state() -> None:
+    """Wipe all user-specific state keys. Called before loading a different user."""
+    st.session_state["_user_store"] = None
+    st.session_state.messages = []
+    st.session_state.user_email = None
+    st.session_state.pending_email = None
+    st.session_state.agent_threads = {}
+    st.session_state.agent_last_message_id = {}
+
+
+def _save_state() -> None:
+    """Persist current session state to disk for the logged-in user."""
+    store: UserStore | None = st.session_state.get("_user_store")
+    if isinstance(store, UserStore):
+        store.save(st.session_state)
 
 
 def _add(role: str, content: str) -> None:
@@ -379,12 +440,16 @@ def main() -> None:
 
     _init_state()
 
+    if not _login_screen():
+        return
+
     # -- Sidebar: reply checker + active thread list ------------------------
     with st.sidebar:
         st.header("Agent replies")
         if st.button("🔍 Check for new replies", use_container_width=True):
             with st.spinner("Checking inboxes…"):
                 _check_agent_replies()
+            _save_state()
             st.rerun()
 
         if st.session_state.agent_threads:
@@ -392,6 +457,13 @@ def main() -> None:
             st.caption("Active threads")
             for email in st.session_state.agent_threads:
                 st.caption(f"• {email}")
+
+        st.divider()
+        if st.button("🆕 New chat", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.pending_email = None
+            _save_state()
+            st.rerun()
 
     # -- Main chat area -----------------------------------------------------
     _render_history()
@@ -409,6 +481,7 @@ def main() -> None:
     _handle_message(user_text)
 
     placeholder.empty()
+    _save_state()
     st.rerun()
 
 

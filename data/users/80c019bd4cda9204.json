@@ -1,0 +1,40 @@
+{
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "No new replies from any agents yet."
+    },
+    {
+      "role": "user",
+      "content": "hello "
+    },
+    {
+      "role": "assistant",
+      "content": "Hi there! How can I assist you with your property search today?"
+    },
+    {
+      "role": "user",
+      "content": "best houses in london "
+    },
+    {
+      "role": "assistant",
+      "content": "Looking for the best houses in London can be quite exciting! Here are a few things to consider:\n\n1. **Area**: London has a variety of neighborhoods, each with its own charm. Are you looking for something central like Kensington or Chelsea, or perhaps something more suburban like Richmond or Hampstead?\n\n2. **Budget**: London property prices can vary widely. Do you have a specific budget in mind?\n\n3. **Commuting**: Consider your daily commute. Proximity to public transport like the Tube can be a major factor.\n\n4. **Schools**: If you have children, you might want to look into areas with good schools.\n\n5. **Safety**: Research the safety of the neighborhoods you're interested in.\n\n6. **Value for Money**: Consider whether the area offers good value for the price.\n\nFeel free to share more about your preferences, and I can help narrow down some options for you!"
+    },
+    {
+      "role": "user",
+      "content": "email me this "
+    },
+    {
+      "role": "assistant",
+      "content": "Done — summary sent to **tansoydan@gmail.com**."
+    }
+  ],
+  "user_email": "tansoydan@gmail.com",
+  "pending_email": null,
+  "agent_threads": {
+    "ap21121@qmul.ac.uk": "19cb064e5276c5ea"
+  },
+  "agent_last_message_id": {
+    "ap21121@qmul.ac.uk": "19cb06669fc5639f"
+  }
+}
