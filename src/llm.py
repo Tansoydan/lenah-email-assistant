@@ -17,10 +17,6 @@ if not OPENAI_API_KEY:
 _client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-# ---------------------------------------------------------------------------
-# Tool definitions
-# ---------------------------------------------------------------------------
-
 _TOOLS = [
     {
         "type": "function",
@@ -65,10 +61,6 @@ _TOOLS = [
     },
 ]
 
-
-# ---------------------------------------------------------------------------
-# System prompts
-# ---------------------------------------------------------------------------
 
 _SYSTEM = """You are LENAH, a helpful property search assistant.
 
@@ -129,13 +121,7 @@ No prose, no markdown fences — just the JSON object.
 """
 
 
-# ---------------------------------------------------------------------------
-# ToolCall
-# ---------------------------------------------------------------------------
-
 class ToolCall:
-    """Returned when the model wants to trigger an email action."""
-
     def __init__(self, name: str, args: dict[str, Any]) -> None:
         self.name = name
         self.args = args
@@ -144,12 +130,7 @@ class ToolCall:
         return f"ToolCall({self.name!r}, {self.args!r})"
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
 def _parse_json(text: str) -> tuple[str, str] | None:
-    """Extract (subject, body) from model output even if wrapped in prose."""
     m = re.search(r"\{.*\}", text or "", re.DOTALL)
     if not m:
         return None
@@ -181,14 +162,6 @@ def _draft(
     history: list[dict],
     system: str = _EMAIL_SYSTEM,
 ) -> tuple[str, str]:
-    """
-    Call the model to draft an email; retry once with a stricter nudge,
-    then fall back to a safe default.
-
-    Accepts an optional `system` so callers can swap in specialised
-    instructions (reply drafting, refinement) while reusing the same
-    retry / parse / fallback logic.
-    """
     context_messages = history[-40:]
 
     for extra in ("", "\n\nIMPORTANT: Your entire response must be a single JSON object."):
@@ -213,10 +186,6 @@ def _draft(
 
 
 def _complete(*, system: str, messages: list[dict]) -> str:
-    """
-    Single-turn plain-text completion.
-    Used for summarisation where structured JSON is not needed.
-    """
     resp = _client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[{"role": "system", "content": system}, *messages],
@@ -224,10 +193,6 @@ def _complete(*, system: str, messages: list[dict]) -> str:
     )
     return (resp.choices[0].message.content or "").strip()
 
-
-# ---------------------------------------------------------------------------
-# Public API — draft-review intent classification
-# ---------------------------------------------------------------------------
 
 _CLASSIFY_SYSTEM = """You are a classifier for a property-search assistant called LENAH.
 
@@ -248,13 +213,6 @@ No punctuation, no explanation.
 
 
 def classify_draft_response(user_text: str) -> str:
-    """
-    Classify what the user wants to do with the current draft.
-
-    Returns:
-        "approve" — send the draft as-is
-        "refine"  — apply the user's instruction and show an updated draft
-    """
     resp = _client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
@@ -265,14 +223,8 @@ def classify_draft_response(user_text: str) -> str:
         max_tokens=5,
     )
     label = (resp.choices[0].message.content or "").strip().lower()
-    # Guard against unexpected output — default to refine so we never
-    # accidentally fire off an email the user didn't explicitly approve.
     return "approve" if label == "approve" else "refine"
 
-
-# ---------------------------------------------------------------------------
-# Public API — conversational
-# ---------------------------------------------------------------------------
 
 def chat(
     *,
@@ -280,11 +232,6 @@ def chat(
     user_text: str,
     user_email: str | None,
 ) -> str | ToolCall:
-    """
-    Send a conversational message and return either:
-      - str       → plain assistant reply
-      - ToolCall  → model wants to trigger an email action
-    """
     context = f"User's email (if known): {user_email or 'unknown'}"
 
     messages = [
@@ -315,12 +262,7 @@ def chat(
     return (msg.content or "").strip()
 
 
-# ---------------------------------------------------------------------------
-# Public API — outbound email drafting
-# ---------------------------------------------------------------------------
-
 def draft_summary_email(*, chat_history: list[dict]) -> tuple[str, str]:
-    """Draft a summary of the chat session to send to the user."""
     prompt = (
         "Write a structured property search summary email using EXACTLY this layout "
         "(plain text only, no markdown, no HTML):\n\n"
@@ -352,7 +294,6 @@ def draft_summary_email(*, chat_history: list[dict]) -> tuple[str, str]:
 
 
 def draft_agent_email(*, chat_history: list[dict], user_request: str) -> tuple[str, str]:
-    """Draft an initial enquiry email to an estate agent."""
     prompt = (
         "Write a short professional email to an estate agent on behalf of the user.\n\n"
         "Include:\n"
@@ -368,19 +309,11 @@ def draft_agent_email(*, chat_history: list[dict], user_request: str) -> tuple[s
     return subject, body
 
 
-# ---------------------------------------------------------------------------
-# Public API — inbound reply handling
-# ---------------------------------------------------------------------------
-
 def summarise_agent_reply(
     *,
     reply_body: str,
     chat_history: list[dict],
 ) -> str:
-    """
-    Summarise an agent's reply email in 2–4 plain sentences for the user.
-    Uses recent chat history as context so the summary is relevant.
-    """
     messages = [
         *chat_history[-10:],
         {
@@ -401,17 +334,6 @@ def draft_reply_to_agent(
     chat_history: list[dict],
     user_request: str,
 ) -> tuple[str, str]:
-    """
-    Draft a reply to an agent's inbound email.
-
-    Args:
-        reply_body:   Plain-text body of the agent's email.
-        chat_history: Conversation history for context.
-        user_request: Optional user instruction (e.g. "ask about parking").
-
-    Returns:
-        (subject, body)
-    """
     extra = f"\nAdditional instruction from user: {user_request}" if user_request else ""
     prompt = (
         "Draft a reply to the following estate agent email on behalf of the user."
@@ -436,19 +358,6 @@ def refine_draft(
     draft_body: str,
     instruction: str,
 ) -> tuple[str, str]:
-    """
-    Revise an existing draft according to a natural-language instruction.
-
-    The subject is only changed when the instruction explicitly refers to it.
-
-    Args:
-        draft_subject: Current subject line.
-        draft_body:    Current draft body.
-        instruction:   e.g. "make it more formal", "ask about parking".
-
-    Returns:
-        (subject, body)
-    """
     prompt = (
         f"Current subject: {draft_subject}\n"
         f"Current draft:\n{draft_body}\n\n"
@@ -459,7 +368,6 @@ def refine_draft(
         history=[],
         system=_REFINE_SYSTEM,
     )
-    # Preserve the original subject unless the user is explicitly targeting it.
     if not any(w in instruction.lower() for w in ("subject", "title", "heading")):
         new_subject = draft_subject
     return new_subject, new_body

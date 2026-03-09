@@ -17,10 +17,6 @@ class GmailClient:
     token_path: str
     scopes: Sequence[str]
 
-    # ------------------------------------------------------------------
-    # Auth / service
-    # ------------------------------------------------------------------
-
     def _get_creds(self) -> Credentials:
         creds: Credentials | None = None
         token_file = Path(self.token_path)
@@ -41,24 +37,15 @@ class GmailClient:
         return creds
 
     def service(self):
-        # Cached on the instance so credentials are refreshed at most once.
         if not hasattr(self, "_service"):
             object.__setattr__(
                 self, "_service", build("gmail", "v1", credentials=self._get_creds())
             )
         return self._service
 
-    # ------------------------------------------------------------------
-    # Encoding helper
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).decode("utf-8")
-
-    # ------------------------------------------------------------------
-    # Fetch helpers — metadata
-    # ------------------------------------------------------------------
 
     def get_message(self, message_id: str) -> dict:
         return (
@@ -75,7 +62,6 @@ class GmailClient:
         )
 
     def get_thread(self, thread_id: str) -> dict:
-        """Returns thread with metadata only (no body). Used for threading headers."""
         return (
             self.service()
             .users()
@@ -90,7 +76,6 @@ class GmailClient:
         )
 
     def get_thread_full(self, thread_id: str) -> dict:
-        """Returns thread with full message payloads (includes body data)."""
         return (
             self.service()
             .users()
@@ -99,17 +84,8 @@ class GmailClient:
             .execute()
         )
 
-    # ------------------------------------------------------------------
-    # Body extraction
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _extract_plain_text(payload: dict) -> str:
-        """
-        Recursively extract plain-text content from a Gmail message payload.
-        Prefers text/plain; falls back to text/html stripped of tags as a
-        last resort (very naive — good enough for summarisation input).
-        """
         mime = payload.get("mimeType", "")
         body_data: str = (payload.get("body") or {}).get("data", "")
 
@@ -118,7 +94,6 @@ class GmailClient:
             return base64.urlsafe_b64decode(padded).decode("utf-8", errors="replace")
 
         if mime.startswith("multipart/"):
-            # Prefer plain over html — try all parts in order.
             parts = payload.get("parts") or []
             plain_parts = [p for p in parts if p.get("mimeType") == "text/plain"]
             html_parts = [p for p in parts if p.get("mimeType") == "text/html"]
@@ -126,7 +101,6 @@ class GmailClient:
                 text = GmailClient._extract_plain_text(part)
                 if text:
                     return text
-            # Recurse into nested multipart sections.
             for part in parts:
                 text = GmailClient._extract_plain_text(part)
                 if text:
@@ -140,41 +114,22 @@ class GmailClient:
 
         return ""
 
-    # ------------------------------------------------------------------
-    # Reply detection
-    # ------------------------------------------------------------------
-
     def get_new_replies(
         self,
         thread_id: str,
         after_message_id: str | None,
     ) -> list[dict]:
-        """
-        Returns messages in the thread that arrived *after* after_message_id.
-
-        Each returned dict contains:
-            id   : str  — Gmail message ID
-            from : str  — sender address / display name
-            body : str  — plain-text content of the message
-
-        If after_message_id is None, all messages in the thread are returned.
-        Only messages *not* sent by "me" are returned — we filter out our own
-        outbound messages so we don't summarise our own drafts.
-        """
         th = self.get_thread_full(thread_id)
         all_messages: list[dict] = th.get("messages") or []
 
-        # Slice to messages after the reference point.
         if after_message_id:
             ids = [m["id"] for m in all_messages]
             if after_message_id in ids:
                 cut = ids.index(after_message_id) + 1
                 all_messages = all_messages[cut:]
-            # If the reference ID isn't found (e.g. pruned), keep everything.
 
         result: list[dict] = []
         for msg in all_messages:
-            # Skip messages we sent ourselves.
             label_ids = msg.get("labelIds") or []
             if "SENT" in label_ids:
                 continue
@@ -199,10 +154,6 @@ class GmailClient:
 
         return result
 
-    # ------------------------------------------------------------------
-    # Threading helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _get_header(msg: dict, name: str) -> str | None:
         headers = (msg.get("payload") or {}).get("headers") or []
@@ -213,10 +164,6 @@ class GmailClient:
         return None
 
     def _latest_rfc_ids(self, thread_id: str) -> tuple[str | None, str | None]:
-        """
-        Returns (in_reply_to, references) based on the latest message in thread.
-        Used to correctly set threading headers on outbound replies.
-        """
         th = self.get_thread(thread_id)
         messages = th.get("messages") or []
         if not messages:
@@ -232,10 +179,6 @@ class GmailClient:
         references = f"{refs_existing} {latest_msgid}" if refs_existing else latest_msgid
         return latest_msgid, references
 
-    # ------------------------------------------------------------------
-    # Send
-    # ------------------------------------------------------------------
-
     def send_email(
         self,
         *,
@@ -246,14 +189,6 @@ class GmailClient:
         reply_to: str | None = None,
         thread_id: str | None = None,
     ) -> tuple[str, str]:
-        """
-        Send an email from the authenticated account.
-
-        If thread_id is supplied the message is sent as a reply in that thread
-        with correct In-Reply-To / References headers.
-
-        Returns (gmail_message_id, thread_id).
-        """
         cc = cc or []
         msg = EmailMessage()
         msg["To"] = to
